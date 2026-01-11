@@ -85,75 +85,72 @@ Focus areas:
 sequenceDiagram
     participant C as Customer App
     participant B as Backend API
-    participant DB as Database
-    participant Redis as Redis (Queue)
+    participant DB as PostgreSQL DB
 
     %% 1. Login
-    C->>B: POST /api/v1/auth/token<br>(username, password)
+    C->>B: POST /api/v1/auth/token<br>(username + password)
     B->>DB: Validate credentials
-    DB-->>B: User found
+    DB-->>B: User found + roles
     B-->>C: 200 OK + JWT Token
 
-    %% 2. Search nearest shops
+    %% 2. Search closest shops
     C->>B: GET /api/v1/shops?<br>longitude=...&latitude=...
-    B->>DB: Query shops + PostGIS distance
-    DB-->>B: List of shops (ordered by distance)
-    B-->>C: 200 OK + Page<ShopDto> (with queue stats)
+    B->>DB: Query nearby shops (PostGIS ST_DistanceSphere)<br>+ calculate queue statistics
+    DB-->>B: List of shops ordered by distance<br>(with shortest queue size & avg wait time)
+    B-->>C: 200 OK + Page<ShopDto>
 
-    %% 3. Choose shop → get menu + subscribe SSE
-    Note over C,B: Customer selects one shop
+    %% 3. Choose shop → subscribe SSE first → then get menu
+    Note over C,B: Customer selects one shop from the list
+    C->>B: GET /api/v1/queues/stream?<br>shopIds={shopId}
+    B-->>C: SSE connection established<br>event: "connected"
+
+    Note over C,B: Now customer receives real-time queue updates
+
     C->>B: GET /api/v1/shops/{shopId}/menu
-    B->>DB: Get menu items
+    B->>DB: Fetch active menu items
     DB-->>B: Menu data
-    B-->>C: 200 OK + MenuDto[]
-
-    C->>B: GET /api/v1/queues/stream?<br>shopIds={shopId},...
-    B-->>C: SSE connection established<br>(event: connected)
+    B-->>C: 200 OK + List<MenuItemDto>
 
     %% 4. Place order
-    C->>B: POST /api/v1/orders<br>(shopId, queueId?, items...)
-    B->>Redis: Add to sorted set (ZADD) + calculate position
-    Redis-->>B: OK
-    B->>DB: Create Order + OrderItems
-    DB-->>B: Order created
-    B->>Redis: Publish queue update
-    Redis-->>B: OK
-    B-->>C: 201 Created + {orderId, position, estimatedWait}
+    C->>B: POST /api/v1/orders<br>(shopId, items, totalAmount...)
+    B->>B: Validate menu availability, stock, etc.
+    B->>DB: Create Order + OrderItems<br>Assign to shortest/currently active queue
+    B->>DB: Create QueueEntry (position = last + 1)
+    DB-->>B: Order & QueueEntry created
+    B->>DB: Update queue current_size & positions
+    DB-->>B: OK
+    B-->>C: 201 Created + {orderId, queueId, position, estimatedWait}
 
-    %% SSE push to all subscribers
-    Redis-)B: Queue update event
-    B-)C: SSE event: queue-update<br>{shopId, queueId, size, waitTime...}
+    Note over B: System publishes queue update event
+    B-)C: SSE event: "queue-update"<br>{shopId, queueId, currentSize, avgWait...}
 
     %% 5. Barista/Owner starts processing
-    Note over B: Barista/Owner logged in
-    B->>Redis: Get next order (ZRANGE 0 0)
-    Redis-->>B: Oldest orderId
-    B->>Redis: Remove from queue (ZREM)
+    Note over B: Barista/Owner logged in (role: OPERATOR / OWNER)
+    B->>DB: GET next waiting QueueEntry (lowest position)
+    DB-->>B: Next order details
     B->>DB: Update order status → "processing"
+    B->>DB: Shift positions of remaining entries
     DB-->>B: OK
-    B->>Redis: Publish update
-    Redis-->>B: OK
-    B-)C: SSE: queue-update (position shift)
+    B-)C: SSE: "queue-update"<br>(everyone's position decreased by 1)
 
     %% 6. Complete order & serve next
-    B->>Redis: Get next order (again ZRANGE)
-    Redis-->>B: Next orderId (if any)
     B->>DB: Update current order → "completed"
     DB-->>B: OK
-    alt There is next order
-        B->>Redis: Remove next from queue
-        B->>DB: Update next → "processing"
+
+    alt There is next waiting order
+        B->>DB: Get next QueueEntry
+        DB-->>B: Next order
+        B->>DB: Update next order → "processing"
         DB-->>B: OK
     end
-    B->>Redis: Publish final update
-    Redis-->>B: OK
-    B-)C: SSE: queue-update (new size/positions)
+
+    B-)C: SSE: "queue-update"<br>(queue size decreased, positions updated)
 
     %% Optional: View waiting orders in queue
-    Note over C,B: Optional view
+    Note over C,B: Optional - customer or staff
     C->>B: GET /api/v1/queues/{queueId}/orders
-    B->>Redis: ZRANGE + fetch order details
-    Redis-->>B: List of waiting orders
+    B->>DB: Fetch all waiting QueueEntry (ordered by position)
+    DB-->>B: List of waiting orders
     B-->>C: 200 OK + List<OrderSummaryDto>
 ```
 
