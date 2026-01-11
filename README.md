@@ -176,7 +176,7 @@ Role-based access control:
 - Input validation & rate limiting
 
 ## 2.6 Database Design 
-[coffeshop.drawio](./coffeshop.drawio)
+[coffeshop.drawio](https://app.diagrams.net/?src=about#HToanbui97%2Fcoffe-shop%2Fdevelop%2Fcoffeshop.drawio#%7B%22pageId%22%3A%22PgOLRdoeelK9GBJZXNGs%22%7D)
 
 ## 2.7 Technology & Coding Standards
 
