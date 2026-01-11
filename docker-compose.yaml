@@ -1,0 +1,17 @@
+version: "3.8"
+services:
+
+  app:
+    image:
+
+  postgres:
+    user: root
+    image: postgis/postgis:16-3.4-alpine
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: coffeshop
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_SCHEMA: public
