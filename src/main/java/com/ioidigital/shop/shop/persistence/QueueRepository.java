@@ -20,7 +20,7 @@ public interface QueueRepository extends JpaRepository<Queue, Long> {
                                  JOIN FETCH q.orders o
                                  JOIN FETCH o.stocks s
                                  JOIN FETCH s.stock
-                                 JOIN FETCH o.user 
+                                 JOIN FETCH o.user
                              WHERE q.id = :queueId
                                AND o.orderStatus IN ('WAITING', 'PROCESSING')
             """)

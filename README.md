@@ -1,6 +1,17 @@
-# 3.1 Solution Design – Customer App & Coffee Shop App
+# 1 Step to run 
+- Build docker image
+```shell
+docker build -t coffe-shop:1.0 .
+```
+- Run docker-compose
+```shell
+docker-compose up -d
+```
+[Swagger](http://localhost:8080/swagger-ui/index.html#)
 
-## 3.1.1 Overview
+# 2 Solution Design – Customer App & Coffee Shop App
+
+## 2.1 Overview
 
 This solution delivers a **robust backend system** that powers both the **Customer App** and the **Coffee Shop App** through a set of secure, well-designed RESTful APIs.
 
@@ -11,7 +22,7 @@ Focus areas:
 - No front-end implementation required
 - All business logic is fully exposed and testable via APIs
 
-## 3.1.2 High-Level Architecture
+## 2.2 High-Level Architecture
 ```
 ┌────────────────────┐               ┌────────────────────┐
 │   Customer App     │               │ Coffee Shop App    │
@@ -45,7 +56,7 @@ Focus areas:
 - Backend Service
 - Database (PostgreSQL + PostGIS)
 
-## 3.1.3 Use Cases
+## 2.3 Use Cases
 
 ### Customer Use Cases
 
@@ -68,27 +79,85 @@ Focus areas:
 - View orders in queue
 - Serve customers (advance queue)
 
-## 3.1.4 Data Flow Example – Place Order & Join Queue
+## 2.4 Data Flow Example – Place Order & Join Queue
+
+```mermaid
+sequenceDiagram
+    participant C as Customer App
+    participant B as Backend API
+    participant DB as Database
+    participant Redis as Redis (Queue)
+
+    %% 1. Login
+    C->>B: POST /api/v1/auth/token<br>(username, password)
+    B->>DB: Validate credentials
+    DB-->>B: User found
+    B-->>C: 200 OK + JWT Token
+
+    %% 2. Search nearest shops
+    C->>B: GET /api/v1/shops?<br>longitude=...&latitude=...
+    B->>DB: Query shops + PostGIS distance
+    DB-->>B: List of shops (ordered by distance)
+    B-->>C: 200 OK + Page<ShopDto> (with queue stats)
+
+    %% 3. Choose shop → get menu + subscribe SSE
+    Note over C,B: Customer selects one shop
+    C->>B: GET /api/v1/shops/{shopId}/menu
+    B->>DB: Get menu items
+    DB-->>B: Menu data
+    B-->>C: 200 OK + MenuDto[]
+
+    C->>B: GET /api/v1/queues/stream?<br>shopIds={shopId},...
+    B-->>C: SSE connection established<br>(event: connected)
+
+    %% 4. Place order
+    C->>B: POST /api/v1/orders<br>(shopId, queueId?, items...)
+    B->>Redis: Add to sorted set (ZADD) + calculate position
+    Redis-->>B: OK
+    B->>DB: Create Order + OrderItems
+    DB-->>B: Order created
+    B->>Redis: Publish queue update
+    Redis-->>B: OK
+    B-->>C: 201 Created + {orderId, position, estimatedWait}
+
+    %% SSE push to all subscribers
+    Redis-)B: Queue update event
+    B-)C: SSE event: queue-update<br>{shopId, queueId, size, waitTime...}
+
+    %% 5. Barista/Owner starts processing
+    Note over B: Barista/Owner logged in
+    B->>Redis: Get next order (ZRANGE 0 0)
+    Redis-->>B: Oldest orderId
+    B->>Redis: Remove from queue (ZREM)
+    B->>DB: Update order status → "processing"
+    DB-->>B: OK
+    B->>Redis: Publish update
+    Redis-->>B: OK
+    B-)C: SSE: queue-update (position shift)
+
+    %% 6. Complete order & serve next
+    B->>Redis: Get next order (again ZRANGE)
+    Redis-->>B: Next orderId (if any)
+    B->>DB: Update current order → "completed"
+    DB-->>B: OK
+    alt There is next order
+        B->>Redis: Remove next from queue
+        B->>DB: Update next → "processing"
+        DB-->>B: OK
+    end
+    B->>Redis: Publish final update
+    Redis-->>B: OK
+    B-)C: SSE: queue-update (new size/positions)
+
+    %% Optional: View waiting orders in queue
+    Note over C,B: Optional view
+    C->>B: GET /api/v1/queues/{queueId}/orders
+    B->>Redis: ZRANGE + fetch order details
+    Redis-->>B: List of waiting orders
+    B-->>C: 200 OK + List<OrderSummaryDto>
 ```
-Customer App                  Backend Service                     Database
-│                               │                                │
-│  Select shop & menu           │                                │
-│──────────────────────────────►│                                │
-│                               │ Validate order & availability  │
-│                               │───────────────────────────────►│
-│                               │                                │ Create Order + OrderItems
-│                               │◄───────────────────────────────│
-│                               │ Assign to shortest queue       │
-│                               │───────────────────────────────►│
-│                               │                                │ Update Queue + Position
-│                               │◄───────────────────────────────│
-│  Return: position & wait time │                                │
-│◄──────────────────────────────│                                │
 
-```
-
-
-## 3.1.5 Security Design
+## 2.5 Security Design
 
 **Authentication**
 - JWT-based (stateless)
@@ -109,10 +178,10 @@ Role-based access control:
 - Spring Security method-level & endpoint protection
 - Input validation & rate limiting
 
-## 3.1.6 Database Design 
+## 2.6 Database Design 
 [coffeshop.drawio](./coffeshop.drawio)
 
-## 3.1.6 Technology & Coding Standards
+## 2.7 Technology & Coding Standards
 
 **Backend Stack**
 - Java 17
@@ -129,7 +198,7 @@ Role-based access control:
 - Clean code & meaningful naming
 - Comprehensive logging (SLF4J + Logback)
 
-## 3.1.7 API Endpoints (High-Level Summary)
+## 2.8 API Endpoints (High-Level Summary)
 
 ### Authentication APIs
 
@@ -145,9 +214,9 @@ Role-based access control:
 | Method | Endpoint                       | Description                                    |
 |--------|--------------------------------|------------------------------------------------|
 | POST   | `/api/v1/shops`                | Create new shop                                |
+| PUT    | `/api/v1/shops/{id}`           | Update shop details                            |
 | GET    | `/api/v1/shops`                | Find nearby shops with queue stat              |
 | GET    | `/api/v1/shops/{id}/menu`      | View shop menu                                 |
-| PUT    | `/api/v1/shops/{id}`           | Update shop details                            |
 | GET    | `/api/v1/queues/stream`        | SSE to get notification queue stat in realtime |
 | POST   | `/api/v1/orders`               | Place order & join queue                       |
 | PUT    | `/api/v1/orders/{id}/cancel`   | Cancel order & exit queue                      |
@@ -156,7 +225,7 @@ Role-based access control:
 | GET    | `/api/v1/queues/{id}/orders`   | View waiting orders in queue                   |
 
 
-## 3.1.8 Testing Strategy (API-Focused)
+## 2.9 Testing Strategy (API-Focused)
 
 Since no front-end is required:
 
@@ -170,8 +239,9 @@ Since no front-end is required:
 - Business logic (order placement, queue assignment, wait time calc)
 - Edge cases (queue full, cancel, concurrent updates)
 
-## 3.1.9 Future Enhancements Roadmap
-- Real-time queue updates via WebSocket / SSE
+## 2.10 Future Enhancements Roadmap
+- Migrate to microservice
+- Manage user session
 - Push notifications ("Your coffee is ready!")
 - Advanced analytics & reporting
 - Customer feedback & rating after service

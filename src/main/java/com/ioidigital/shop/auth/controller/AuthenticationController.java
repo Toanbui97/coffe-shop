@@ -11,6 +11,7 @@ import com.ioidigital.shop.util.ResponseFactory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -38,6 +39,7 @@ public class AuthenticationController {
     }
 
     @PostMapping("/barista")
+    @PreAuthorize("hasAuthority('OWNER')")
     ResponseEntity<BaseResponse> createBarista(@RequestBody UserCreateReq userCreateReq) {
         var userId = authenticationService.createUser(userCreateReq, Role.OPERATOR);
         return responseFactory.success(HttpStatus.OK, userId);

@@ -18,5 +18,5 @@ public class PageShopItem {
     private Timestamp openingTime;
     private Timestamp closingTime;
     private Double distanceMeters;
-    private List<Long> queueIds;
+    private List<ShopQueueItem> queues;
 }

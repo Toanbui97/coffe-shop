@@ -32,14 +32,9 @@ import java.util.stream.IntStream;
 public class ShopServiceImpl implements ShopService {
 
     private final ShopRepository shopRepository;
-    private final StockRepository stockRepository;
     private final QueueRepository queueRepository;
 
     private final GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
-    private final UserRepository userRepository;
-    private final OrderRepository orderRepository;
-    private final QueueService queueService;
-    private final OrderStockRepository orderStockRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -71,9 +66,14 @@ public class ShopServiceImpl implements ShopService {
                                 .openingTime(e.getOpeningTime())
                                 .closingTime(e.getClosingTime())
                                 .distanceMeters(e.getDistanceMeters())
-                                .queueIds(queueMap.getOrDefault(e.getId(), List.of())
+                                .queues(queueMap.getOrDefault(e.getId(), List.of())
                                         .stream()
-                                        .map(Queue::getId)
+                                        .map(q -> ShopQueueItem.builder()
+                                                .queueId(q.getId())
+                                                .queueSize(q.getSize())
+                                                .currentSize(q.getCurrentSize())
+                                                .remainingTime(q.getRemainTime())
+                                                .build())
                                         .toList())
                                 .build())
                         .toList())

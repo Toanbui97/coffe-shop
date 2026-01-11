@@ -9,7 +9,7 @@ public enum AppErrorCodeMsg implements BaseErrorCodeMsg {
     AUTH_40002(HttpStatus.UNAUTHORIZED, 40002, "Concurrent login."),
     AUTH_40003(HttpStatus.FORBIDDEN, 40003, "Access denied."),
     AUTH_40004(HttpStatus.NOT_FOUND, 40004, "User not found."),
-    AUTH_40005(HttpStatus.NOT_FOUND, 40005, "User invalid."),
+    AUTH_40005(HttpStatus.BAD_REQUEST, 40005, "User invalid."),
 
 
     SHOP_50000(HttpStatus.BAD_REQUEST, 50000, "Shop id invalid."),

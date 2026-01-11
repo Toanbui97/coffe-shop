@@ -1,11 +1,7 @@
 version: "3.8"
 services:
 
-  app:
-    image:
-
   postgres:
-    user: root
     image: postgis/postgis:16-3.4-alpine
     container_name: postgres
     ports:
@@ -15,3 +11,20 @@ services:
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: admin
       POSTGRES_SCHEMA: public
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U admin -d coffeshop" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    image: coffe-shop:1.0
+    container_name: app
+    env_file:
+      - ./.env
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
